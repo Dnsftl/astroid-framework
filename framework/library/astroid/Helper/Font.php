@@ -132,7 +132,7 @@ class Font
 
     /**
      * Loads the cached font-info for local fonts from `/media/templates/site/$template/fonts.cache.json`.
-     * 
+     *
      * @param string $template template name
      * @return null|array font-info
      */
@@ -149,7 +149,7 @@ class Font
 
     /**
      * Updates the cached font-info for local fonts in `/media/templates/site/$template/fonts.cache.json`.
-     * 
+     *
      * @param string $template template name
      * @param array $fonts font-info
      */
@@ -187,28 +187,63 @@ class Font
         return $fonts;
     }
 
-    public static function getLocalFonts($template_fonts_path) {
-        $fonts = [];
-        $font_extensions = ['otf', 'ttf', 'woff', 'eot'];
+    public static function getLocalFonts(string $template_fonts_path): array
+    {
+        $fonts           = [];
+        $lib_extensions  = ['otf', 'ttf', 'woff', 'eot'];
+        $woff2_extension = 'woff2';
+
         foreach (scandir($template_fonts_path) as $font_path) {
-            if (is_file($template_fonts_path . '/' . $font_path)) {
-                $pathinfo = pathinfo($template_fonts_path . '/' . $font_path);
-                if (in_array($pathinfo['extension'], $font_extensions)) {
-                    $font = \FontLib\Font::load($template_fonts_path . '/' . $font_path);
-                    $font->parse();
-                    $fontname = $font->getFontFullName();
-                    $fontid = 'library-font-' . Helper::slugify($fontname);
-                    if (!isset($fonts[$fontid])) {
-                        $fonts[$fontid] = [];
-                        $fonts[$fontid]['id'] = $fontid;
-                        $fonts[$fontid]['name'] = $fontname;
-                        $fonts[$fontid]['files'] = [];
-                    }
-                    $fonts[$fontid]['files'][] = $font_path;
-                }
+            $full_path = $template_fonts_path . '/' . $font_path;
+            if (!is_file($full_path)) {
+                continue;
             }
+
+            $pathinfo  = pathinfo($full_path);
+            $extension = strtolower($pathinfo['extension'] ?? '');
+
+            if ($extension === $woff2_extension) {
+                $fontname = self::getFontNameFromWoff2($full_path);
+            } elseif (in_array($extension, $lib_extensions, true)) {
+                $font     = \FontLib\Font::load($full_path);
+                $font->parse();
+                $fontname = $font->getFontFullName();
+            } else {
+                continue;
+            }
+
+            if (empty($fontname)) {
+                continue;
+            }
+
+            $fontid = 'library-font-' . Helper::slugify($fontname);
+            if (!isset($fonts[$fontid])) {
+                $fonts[$fontid] = [
+                    'id'    => $fontid,
+                    'name'  => $fontname,
+                    'files' => [],
+                ];
+            }
+            $fonts[$fontid]['files'][] = $font_path;
         }
+
         return $fonts;
+    }
+
+    // php-font-lib does not support woff2 — derive name from filename.
+    // RobotoSlab-Regular.woff2 → Roboto Slab Regular
+    private static function getFontNameFromWoff2(string $filepath): string
+    {
+        if (!is_readable($filepath)) {
+            return '';
+        }
+
+        $basename = pathinfo($filepath, PATHINFO_FILENAME);
+        $name     = str_replace(['-', '_'], ' ', $basename);
+        $name     = preg_replace('/([a-z])([A-Z])/', '$1 $2', $name);
+        $name     = trim(preg_replace('/\s+/', ' ', $name));
+
+        return $name !== '' ? $name : $basename;
     }
 
     public static function fontAstroidIcons() {
